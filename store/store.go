@@ -14,12 +14,19 @@ type Store interface {
 	Close()
 }
 
-// type ChannelStore interface {
-// 	Save(channel *model.Channel) StoreChannel
-// 	Get(id string) StoreChannel
-// 	GetByName(name string) StoreChannel
-// 	Delete(id string) StoreChannel
-// }
+type ChannelStore interface {
+	Save(channel *model.Channel) StoreChannel
+	Get(id string) StoreChannel
+	GetByName(name string) StoreChannel
+	Delete(id string) StoreChannel
+}
+
+type ChannelMembersStore interface {
+	Save(channel *model.Channel) StoreChannel
+	Get(id string) StoreChannel
+	GetByName(name string) StoreChannel
+	Delete(id string) StoreChannel
+}
 
 type UserStore interface {
 	Save(user *model.User) StoreChannel
