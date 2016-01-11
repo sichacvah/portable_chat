@@ -1,7 +1,7 @@
 package store
 
 import (
-	l4g "code.google.com/p/log4go"
+	l4g "github.com/alecthomas/log4go"
 
 	"github.com/joyrexus/buckets"
 )
@@ -11,18 +11,17 @@ type BoltDBStore struct {
 	user UserStore
 }
 
-func NewBoltDBStore() BoltDBStore {
-err:
-	boltDbStore := &BoltDBStore{}
+func NewBoltDBStore() *BoltDBStore {
+	boltDbStore := BoltDBStore{}
 
-	db, err := buckets.Open("fourty_four.db"); err != nil {
+	if db, err := buckets.Open("fourty_four.db"); err != nil {
 		l4g.Critical("Not db connection")
 		panic(err)
 	} else {
 		boltDbStore.db = db
-		boltDbStore.user = NewBoltDbUser(boltDbStore)
+		boltDbStore.user = NewBoltDbUserStore(&boltDbStore)
 	}
-	return boltDbStore
+	return &boltDbStore
 }
 
 func (bs BoltDBStore) User() UserStore {

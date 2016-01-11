@@ -23,7 +23,6 @@ func NewServer() {
 
 	Srv = &Server{}
 	Srv.Store = store.NewBoltDBStore()
-
 	Srv.Router = mux.NewRouter()
 }
 
@@ -39,8 +38,8 @@ func StartServer() {
 		AllowedHeaders:   []string{"*"},
 	})
 
-	n.User(c)
-	n.UserHandler(handler)
+	n.Use(c)
+	n.UseHandler(handler)
 	http.ListenAndServe(string(os.Args[1])+":5000", n)
 
 }

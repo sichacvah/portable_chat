@@ -1,24 +1,25 @@
 package api
 
 import (
+	"net/http"
+
 	l4g "code.google.com/p/log4go"
 	"github.com/codegangsta/negroni"
+	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
-	"github.com/sichacvah/portable_chat/model"
-	"net/http"
 )
 
 func InitWebSocket(r *mux.Router) {
 	l4g.Debug("Initializing websocket api")
 	r.Handle("/websocket", negroni.New(
-		//		negroni.HandlerFunc(RequireAuthAndUser),
+		negroni.HandlerFunc(RequireAuthAndUser),
 		negroni.HandlerFunc(connect),
 	)).Methods("GET")
 	hub.Start()
 }
 
-func connect(w http.ResponseWriter, r *http.Request) {
+func connect(rw http.ResponseWriter, req *http.Request, next http.HandlerFunc) {
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -27,16 +28,16 @@ func connect(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	ws, err := upgrader.Upgrade(w, r, nil)
+	ws, err := upgrader.Upgrade(rw, req, nil)
 	if err != nil {
 		l4g.Error("websocket connect err: %v", err)
 		return
 	}
 
-	sessionContext := context.Get(r, "context")
+	sessionContext := context.Get(req, "context").(Context)
 
 	wc := NewWebConn(ws, sessionContext.User.Id)
 	hub.Register(wc)
-	go wc.WritePump()
-	wc.ReadPump()
+	go wc.writePump()
+	wc.readPump()
 }

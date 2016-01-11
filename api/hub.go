@@ -3,10 +3,11 @@ package api
 import "github.com/sichacvah/portable_chat/model"
 
 type Hub struct {
-	register   chan *WebConn
-	unregister chan *WebConn
-	broadcast  chan *model.Message
-	stop       chan string
+	register    chan *WebConn
+	unregister  chan *WebConn
+	broadcast   chan *model.Message
+	stop        chan string
+	connections map[*WebConn]bool
 }
 
 var hub = &Hub{
@@ -69,7 +70,7 @@ func (h *Hub) Start() {
 	}()
 }
 
-func ShouldSendEvent(webCon *WebConn, msg *Message) {
-	_, _ := webCon, msg
-	return True
+func ShouldSendEvent(webCon *WebConn, msg *model.Message) bool {
+	_, _ = webCon, msg
+	return true
 }

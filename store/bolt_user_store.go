@@ -1,6 +1,8 @@
 package store
 
 import (
+	"strings"
+
 	"github.com/joyrexus/buckets"
 	"github.com/sichacvah/portable_chat/model"
 )
@@ -17,10 +19,66 @@ const (
 
 func NewBoltDbUserStore(boltStore *BoltDBStore) UserStore {
 	us := &BoltUserStore{}
-	us.usersBucket, _ = BoltDBStore.db.New([]byte(USERS))
-	us.usersByLoginBucket, _ = BoltDBStore.db.New([]byte(USERS_BY_LOGIN))
+	us.usersBucket, _ = boltStore.db.New([]byte(USERS))
+	us.usersByLoginBucket, _ = boltStore.db.New([]byte(USERS_BY_LOGIN))
 
 	return us
+}
+
+func (us BoltUserStore) GetUsers() StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		result := StoreResult{}
+
+		items, err := us.usersBucket.Items()
+
+		if err != nil {
+			result.Err = model.NewAppError("BoltUserStore.GetUsers", err.Error(), "")
+			storeChannel <- result
+			close(storeChannel)
+		}
+
+		users := []string{}
+
+		for _, item := range items {
+			users = append(users, string(item.Value))
+		}
+
+		result.Data = users
+		storeChannel <- result
+		close(storeChannel)
+	}()
+
+	return storeChannel
+}
+
+func (us BoltUserStore) Delete(userId string) StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		result := StoreResult{}
+
+		if len(userId) <= 0 {
+			result.Err = model.NewAppError("BoltUserStore.Delete", "You must get userId in delete", "user_id = "+userId)
+			storeChannel <- result
+			close(storeChannel)
+		}
+
+		err := us.usersBucket.Delete([]byte(userId))
+		if err != nil {
+			result.Err = model.NewAppError("BoltUserStore.Delete", err.Error(), "")
+			storeChannel <- result
+			close(storeChannel)
+		}
+
+		result.Data = "ok"
+
+		storeChannel <- result
+		close(storeChannel)
+	}()
+
+	return storeChannel
 }
 
 func (us BoltUserStore) Update(user *model.User) StoreChannel {
@@ -48,7 +106,7 @@ func (us BoltUserStore) Update(user *model.User) StoreChannel {
 		us.usersBucket.Put([]byte(user.Id), []byte(userJson))
 		us.usersByLoginBucket.Put([]byte(user.Login), []byte(user.Id))
 
-		result.Date = user
+		result.Data = user
 
 		storeChannel <- result
 		return
@@ -96,13 +154,35 @@ func (us BoltUserStore) getJson(id string) string {
 	if err != nil {
 		panic(err)
 	} else {
-		return user
+		return string(user)
 	}
 }
 
-func (us BoltUserStore) Get(id string) *User {
-	user := getJson(id)
-	return model.UserFromJson(string(user))
+func (us BoltUserStore) get(id string) *model.User {
+	user := string(us.getJson(id))
+	return model.UserFromJson(strings.NewReader(user))
+}
+
+func (us BoltUserStore) Get(id string) StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		result := StoreResult{}
+		data := us.get(id)
+		if data == nil {
+			result.Err = model.NewAppError("BoltUserStore.Get", "User not found", "userId="+id)
+			storeChannel <- result
+			close(storeChannel)
+			return
+		}
+
+		result.Data = data
+		storeChannel <- result
+		close(storeChannel)
+		return
+	}()
+
+	return storeChannel
 }
 
 func (us BoltUserStore) getIdByLogin(login string) string {
@@ -110,16 +190,38 @@ func (us BoltUserStore) getIdByLogin(login string) string {
 	if err != nil {
 		panic(err)
 	} else {
-		return userID
+		return string(userID)
 	}
 }
 
-func (us BoltUserStore) GetByLogin(login string) *User {
-	userId := us.getIdByLogin(login)
-	user := getJson(userId)
-	return model.UserFromJson(string(user))
+func (us BoltUserStore) GetByLogin(login string) StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		result := StoreResult{}
+		data := us.getByLogin(login)
+		if data == nil {
+			result.Err = model.NewAppError("BoltUserStore.GetByLogin", "User not found", "userLogin="+login)
+			storeChannel <- result
+			close(storeChannel)
+			return
+		}
+
+		result.Data = data
+		storeChannel <- result
+		close(storeChannel)
+		return
+	}()
+
+	return storeChannel
 }
 
-func (us BoltUserStore) isLoginTaken(login string) {
-	return getByLoginJSON(login) != nil
+func (us BoltUserStore) getByLogin(login string) *model.User {
+	userId := us.getIdByLogin(login)
+	user := string(us.getJson(userId))
+	return model.UserFromJson(strings.NewReader(user))
+}
+
+func (us BoltUserStore) isLoginTaken(login string) bool {
+	return us.getIdByLogin(login) != ""
 }

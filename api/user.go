@@ -20,26 +20,98 @@ func InitUser(r *mux.Router) {
 		negroni.HandlerFunc(createUser),
 	)).Methods("POST")
 	sr.Handle("/", negroni.New(
-		negroni.HandlerFunc(RequireTokenAuthentication),
+		negroni.HandlerFunc(RequireAuth),
 		negroni.HandlerFunc(allUsers),
 	)).Methods("GET")
 	sr.Handle("/{uuid}", negroni.New(
-		negroni.HandlerFunc(RequireTokenAuthentication),
-		negroni.HandlerFunc(allUsers),
+		negroni.HandlerFunc(RequireAuthAndUser),
+		negroni.HandlerFunc(getUser),
 	)).Methods("GET")
 	sr.Handle("/{uuid}", negroni.New(
-		negroni.HandlerFunc(RequireTokenAuthenticationAndUser),
+		negroni.HandlerFunc(RequireAuth),
 		negroni.HandlerFunc(deleteUser),
 	)).Methods("DELETE")
 	sr.Handle("/{uuid}", negroni.New(
-		negroni.HandlerFunc(RequireTokenAuthenticationAndUser),
+		negroni.HandlerFunc(RequireAuthAndUser),
 		negroni.HandlerFunc(updateUser),
 	))
 }
 
-func createUser(w http.ResponseWriter, r *http.Request) {
+func deleteUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	sessionContext := context.Get(r, "context").(Context)
+	if sessionContext.Err != nil {
+		sessionContext.SetInvalidParam("all Users", "user")
+		w.WriteHeader(sessionContext.Err.StatusCode)
+		return
+	}
+	vars := mux.Vars(r)
+	userId := vars["uuid"]
+
+	result := <-Srv.Store.User().Delete(string(userId))
+	if result.Err != nil {
+		sessionContext.SetInvalidParam("update Users", "user")
+		w.WriteHeader(sessionContext.Err.StatusCode)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+
+}
+
+func updateUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	sessionContext := context.Get(r, "context").(Context)
+	if sessionContext.Err != nil {
+		sessionContext.SetInvalidParam("all Users", "user")
+		w.WriteHeader(sessionContext.Err.StatusCode)
+		return
+	}
+
 	user := model.UserFromJson(r.Body)
-	sessionContext := context.Get(r, "context")
+	result := <-Srv.Store.User().Update(user)
+	if result.Err != nil {
+		sessionContext.SetInvalidParam("update Users", "user")
+		w.WriteHeader(sessionContext.Err.StatusCode)
+		return
+	}
+
+	updatedUser := result.Data.(*model.User)
+	w.Write([]byte(updatedUser.ToJson()))
+}
+
+func getUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	sessionContext := context.Get(r, "context").(Context)
+	if sessionContext.Err != nil {
+		sessionContext.SetInvalidParam("all Users", "user")
+		w.WriteHeader(sessionContext.Err.StatusCode)
+		return
+	}
+	vars := mux.Vars(r)
+	userId := vars["uuid"]
+	result := <-Srv.Store.User().Get(string(userId))
+	if result.Err != nil {
+		sessionContext.SetInvalidParam("get Users", "user")
+		w.WriteHeader(sessionContext.Err.StatusCode)
+		return
+	}
+	user := result.Data.(*model.User)
+	w.Write([]byte(user.ToJson()))
+}
+
+func allUsers(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	sessionContext := context.Get(r, "context").(Context)
+	w.Header().Set("Content-Type", "application/json")
+	result := <-Srv.Store.User().GetUsers()
+	if result.Err != nil || sessionContext.Err != nil {
+		sessionContext.SetInvalidParam("all Users", "user")
+		w.WriteHeader(sessionContext.Err.StatusCode)
+		return
+	}
+
+	w.Write(result.Data.([]byte))
+}
+
+func createUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	user := model.UserFromJson(r.Body)
+	sessionContext := context.Get(r, "context").(Context)
 	w.Header().Set("Content-Type", "application/json")
 	if user == nil {
 		sessionContext.SetInvalidParam("Create User", "user")
@@ -47,12 +119,12 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := <-Srv.Store.UserStore().Save(user)
+	result := <-Srv.Store.User().Save(user)
 	if result.Err != nil {
 		sessionContext.SetInvalidParam("Create User", "user")
 		w.WriteHeader(sessionContext.Err.StatusCode)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(result.data.ToJson()))
+	w.Write([]byte(result.Data.(*model.User).ToJson()))
 }

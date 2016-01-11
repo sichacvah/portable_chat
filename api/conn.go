@@ -46,7 +46,7 @@ func (c *WebConn) writePump() {
 	ticker := time.NewTicker(PING_PERIOD)
 
 	defer func() {
-		tiker.Stop()
+		ticker.Stop()
 		c.WebSocket.Close()
 	}()
 
@@ -58,7 +58,13 @@ func (c *WebConn) writePump() {
 				c.WebSocket.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-		case <-tiker.C:
+
+			c.WebSocket.SetWriteDeadline(time.Now().Add(WRITE_WAIT))
+			if err := c.WebSocket.WriteJSON(msg); err != nil {
+				return
+			}
+
+		case <-ticker.C:
 			c.WebSocket.SetWriteDeadline(time.Now().Add(WRITE_WAIT))
 			if err := c.WebSocket.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
 				return
