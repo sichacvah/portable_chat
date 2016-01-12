@@ -1,221 +1,188 @@
 package store
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/joyrexus/buckets"
 	"github.com/sichacvah/portable_chat/model"
 )
 
-type BoltUserStore struct {
-	channelsBucket *buckets.Bucket
+type BoltChannelStore struct {
+	channelsBucket       *buckets.Bucket
+	channelMembersBucket *buckets.Bucket
 }
 
-const CHANNELS = "channels"
+const (
+	CHANNELS        = "channels"
+	CHANNEL_MEMBERS = "channel_members"
+)
 
-func NewBoltDbChannelStore(boltStore *BoltDBStore) UserStore {
-	us := &BoltChannelStore{}
-	us.channelsBucket, _ = boltStore.db.New([]byte(CHANNELS))
-	return us
+func NewBoltDbChannelStore(boltStore *BoltDBStore) ChannelStore {
+	cs := &BoltChannelStore{}
+	cs.channelsBucket, _ = boltStore.db.New([]byte(CHANNELS))
+	cs.channelMembersBucket, _ = boltStore.db.New([]byte(CHANNEL_MEMBERS))
+	return cs
 }
 
-func (us BoltUserStore) GetChannels() StoreChannel {
+func (cs BoltChannelStore) SaveMember(member *model.ChannelMember) StoreChannel {
+	storeChannel := make(StoreChannel)
+	go func() {
+		var result StoreResult
+		items, err := cs.channelMembersBucket.Items()
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.SaveMember", "Error while save members", "")
+		} else {
+			id := len(items) + 1
+			err := cs.channelMembersBucket.Put([]byte(strconv.Itoa(id)), []byte(member.ToJson()))
+			if err != nil {
+				result.Err = model.NewAppError("BoltChannelStore.SaveMember", "Error while save members", "")
+			}
+		}
+	}()
+	return storeChannel
+}
+
+func (cs BoltChannelStore) GetMembers(channel *model.Channel) StoreChannel {
 	storeChannel := make(StoreChannel)
 
 	go func() {
-		result := StoreResult{}
+		var result StoreResult
 
-		items, err := us.usersBucket.Items()
-
+		items, err := cs.channelMembersBucket.Items()
 		if err != nil {
-			result.Err = model.NewAppError("BoltUserStore.GetUsers", err.Error(), "")
-			storeChannel <- result
-			close(storeChannel)
+			result.Err = model.NewAppError("BoltChannelStore.GetMembers", "Error while get members", "")
+		} else {
+			resultData := make(map[*model.ChannelMember]bool)
+			for _, item := range items {
+				memberJson := string(item.Value)
+				member := model.ChannelMemberFromJson(strings.NewReader(memberJson))
+				if member.ChannelId == channel.Id {
+					resultData[member] = true
+				}
+			}
+
+			result.Data = resultData
 		}
 
-		users := []string{}
-
-		for _, item := range items {
-			users = append(users, string(item.Value))
-		}
-
-		result.Data = users
 		storeChannel <- result
 		close(storeChannel)
+		return
 	}()
 
 	return storeChannel
 }
 
-func (us BoltUserStore) Delete(userId string) StoreChannel {
+func (cs BoltChannelStore) Save(channel *model.Channel) StoreChannel {
 	storeChannel := make(StoreChannel)
 
 	go func() {
-		result := StoreResult{}
-
-		if len(userId) <= 0 {
-			result.Err = model.NewAppError("BoltUserStore.Delete", "You must get userId in delete", "user_id = "+userId)
-			storeChannel <- result
-			close(storeChannel)
+		var result StoreResult
+		if channel.Type == model.CHANNEL_DIRECT {
+			result.Err = model.NewAppError("BoltChannelStore.Save", "Use Direct channel save to save direct channel", "")
+		} else {
+			channel.PreSave()
+			err := cs.channelsBucket.Put([]byte(channel.Id), []byte(channel.ToJson()))
+			if err != nil {
+				result.Err = model.NewAppError("BoltChannelStore.Save", "Error while save", "")
+			}
 		}
 
-		err := us.usersBucket.Delete([]byte(userId))
+		storeChannel <- result
+		close(storeChannel)
+		return
+	}()
+
+	return storeChannel
+}
+
+func (cs BoltChannelStore) Update(channel *model.Channel) StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		var result StoreResult
+		channelJson := channel.ToJson()
+		err := cs.channelsBucket.Put([]byte(channel.Id), []byte(channelJson))
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.Update", "Error while update", "")
+		} else {
+			result.Data = channelJson
+		}
+		storeChannel <- result
+		close(storeChannel)
+		return
+	}()
+
+	return storeChannel
+}
+
+func (cs BoltChannelStore) Delete(channelId string) StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		var result StoreResult
+
+		if len(channelId) <= 0 {
+			result.Err = model.NewAppError("BoltChanelStore.Delete", "You must get channelId in delete", "")
+			storeChannel <- result
+			close(storeChannel)
+			return
+		}
+		err := cs.channelsBucket.Delete([]byte(channelId))
 		if err != nil {
 			result.Err = model.NewAppError("BoltUserStore.Delete", err.Error(), "")
 			storeChannel <- result
 			close(storeChannel)
 		}
-
-		result.Data = "ok"
-
-		storeChannel <- result
-		close(storeChannel)
 	}()
 
 	return storeChannel
 }
 
-func (us BoltUserStore) Update(user *model.User) StoreChannel {
+func (cs BoltChannelStore) GetByName(name string) StoreChannel {
 	storeChannel := make(StoreChannel)
 
 	go func() {
-		result := StoreResult{}
+		var result StoreResult
 
-		if len(user.Password) > 0 {
-			if user.PasswordConfirmation != user.Password {
-				result.Err = model.NewAppError("BoltUserStore.Update", "When update password must be equal to passwordConfirmation", "user_id"+user.Id)
+		items, err := cs.channelsBucket.Items()
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.GetByName", "Error while get by name", "")
+			storeChannel <- result
+			close(storeChannel)
+			return
+		}
+
+		for _, item := range items {
+			channel := model.ChannelFromJson(strings.NewReader(string(item.Value)))
+			if channel.Name == name {
+				result.Data = channel
 				storeChannel <- result
 				close(storeChannel)
+				return
 			}
 		}
-		if us.isLoginTaken(user.Login) {
-			result.Err = model.NewAppError("BoltUserStore.Save", "User Login already taken", "user_login="+user.Login)
-			storeChannel <- result
-			close(storeChannel)
-			return
-		}
-
-		user.PreSave()
-		userJson := user.ToJson()
-		us.usersBucket.Put([]byte(user.Id), []byte(userJson))
-		us.usersByLoginBucket.Put([]byte(user.Login), []byte(user.Id))
-
-		result.Data = user
-
-		storeChannel <- result
-		return
 	}()
 
 	return storeChannel
 }
 
-func (us BoltUserStore) Save(user *model.User) StoreChannel {
+func (cs BoltChannelStore) Get(channelId string) StoreChannel {
 	storeChannel := make(StoreChannel)
 
 	go func() {
-		result := StoreResult{}
-
-		if len(user.Id) > 0 {
-			result.Err = model.NewAppError("BoltUserStore.Save", "Must call update for exisiting user", "user_id="+user.Id)
-			storeChannel <- result
-			close(storeChannel)
-			return
+		var result StoreResult
+		channelJson, err := cs.channelsBucket.Get([]byte(channelId))
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.Get", "Error while get", "")
+		} else {
+			result.Data = model.ChannelFromJson(strings.NewReader(string(channelJson)))
 		}
 
-		if us.isLoginTaken(user.Login) {
-			result.Err = model.NewAppError("BoltUserStore.Save", "User Login already taken", "user_login="+user.Login)
-			storeChannel <- result
-			close(storeChannel)
-			return
-		}
-
-		user.PreSave()
-		userJSON := user.ToJson()
-		us.usersBucket.Put([]byte(user.Id), []byte(userJSON))
-		us.usersByLoginBucket.Put([]byte(user.Login), []byte(user.Id))
-
-		result.Data = user
-
-		storeChannel <- result
-		close(storeChannel)
-	}()
-
-	return storeChannel
-}
-
-func (us BoltUserStore) getJson(id string) string {
-	user, err := us.usersBucket.Get([]byte(id))
-	if err != nil {
-		panic(err)
-	} else {
-		return string(user)
-	}
-}
-
-func (us BoltUserStore) get(id string) *model.User {
-	user := string(us.getJson(id))
-	return model.UserFromJson(strings.NewReader(user))
-}
-
-func (us BoltUserStore) Get(id string) StoreChannel {
-	storeChannel := make(StoreChannel)
-
-	go func() {
-		result := StoreResult{}
-		data := us.get(id)
-		if data == nil {
-			result.Err = model.NewAppError("BoltUserStore.Get", "User not found", "userId="+id)
-			storeChannel <- result
-			close(storeChannel)
-			return
-		}
-
-		result.Data = data
 		storeChannel <- result
 		close(storeChannel)
 		return
 	}()
 
 	return storeChannel
-}
-
-func (us BoltUserStore) getIdByLogin(login string) string {
-	userID, err := us.usersByLoginBucket.Get([]byte(login))
-	if err != nil {
-		panic(err)
-	} else {
-		return string(userID)
-	}
-}
-
-func (us BoltUserStore) GetByLogin(login string) StoreChannel {
-	storeChannel := make(StoreChannel)
-
-	go func() {
-		result := StoreResult{}
-		data := us.getByLogin(login)
-		if data == nil {
-			result.Err = model.NewAppError("BoltUserStore.GetByLogin", "User not found", "userLogin="+login)
-			storeChannel <- result
-			close(storeChannel)
-			return
-		}
-
-		result.Data = data
-		storeChannel <- result
-		close(storeChannel)
-		return
-	}()
-
-	return storeChannel
-}
-
-func (us BoltUserStore) getByLogin(login string) *model.User {
-	userId := us.getIdByLogin(login)
-	user := string(us.getJson(userId))
-	return model.UserFromJson(strings.NewReader(user))
-}
-
-func (us BoltUserStore) isLoginTaken(login string) bool {
-	return us.getIdByLogin(login) != ""
 }

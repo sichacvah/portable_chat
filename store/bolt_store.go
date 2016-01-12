@@ -7,8 +7,9 @@ import (
 )
 
 type BoltDBStore struct {
-	db   *buckets.DB
-	user UserStore
+	db      *buckets.DB
+	user    UserStore
+	channel ChannelStore
 }
 
 func NewBoltDBStore() *BoltDBStore {
@@ -22,6 +23,10 @@ func NewBoltDBStore() *BoltDBStore {
 		boltDbStore.user = NewBoltDbUserStore(&boltDbStore)
 	}
 	return &boltDbStore
+}
+
+func (bs BoltDBStore) Channel() ChannelStore {
+	return bs.channel
 }
 
 func (bs BoltDBStore) User() UserStore {

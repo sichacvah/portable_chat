@@ -3,6 +3,15 @@ package model
 import (
 	"encoding/json"
 	"io"
+
+	"github.com/pborman/uuid"
+)
+
+const (
+	CHANNEL_OPEN    = "O"
+	CHANNEL_PRIVATE = "P"
+	CHANNEL_DIRECT  = "D"
+	DEFAULT_CHANNEL = "general"
 )
 
 type Channel struct {
@@ -21,6 +30,10 @@ func (c *Channel) ToJson() string {
 	}
 }
 
+func (c *Channel) PreSave() {
+	c.Id = uuid.New()
+}
+
 // UserFromJson will decode the imput and return a user
 func ChannelFromJson(data io.Reader) *Channel {
 	decoder := json.NewDecoder(data)
@@ -34,8 +47,8 @@ func ChannelFromJson(data io.Reader) *Channel {
 	}
 }
 
-func ChannelMapToJson(u map[string]*Channel) string {
-	b, err := json.Marshal(u)
+func ChannelMapToJson(o map[string]*Channel) string {
+	b, err := json.Marshal(o)
 	if err != nil {
 		return ""
 	} else {
@@ -43,7 +56,7 @@ func ChannelMapToJson(u map[string]*Channel) string {
 	}
 }
 
-func ChannelMapFromJson(data io.Reader) map[string]*User {
+func ChannelMapFromJson(data io.Reader) map[string]*Channel {
 	decoder := json.NewDecoder(data)
 	var channels map[string]*Channel
 	err := decoder.Decode(&channels)

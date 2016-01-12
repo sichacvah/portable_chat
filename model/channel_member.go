@@ -6,7 +6,6 @@ import (
 )
 
 type ChannelMember struct {
-	Id        string `json:"string"`
 	UserId    string `json:"string"`
 	ChannelId string `json:"string"`
 }
