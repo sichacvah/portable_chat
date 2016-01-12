@@ -12,7 +12,7 @@ import (
 
 func InitWebSocket(r *mux.Router) {
 	l4g.Debug("Initializing websocket api")
-	r.Handle("/websocket", negroni.New(
+	r.Handle("/websocket/{uuid}", negroni.New(
 		negroni.HandlerFunc(RequireAuthAndUser),
 		negroni.HandlerFunc(connect),
 	)).Methods("GET")

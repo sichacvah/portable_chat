@@ -51,20 +51,23 @@ func (u *User) setHashedPassword() {
 	u.Password = string(hashedPassword)
 }
 
+func (u *User) ComparePassword(password string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)) == nil
+}
+
 func (u *User) PreSave() {
 	u.Id = uuid.New()
 	u.setHashedPassword()
 	u.PasswordConfirmation = ""
 }
 
-func (u *User) SetToken() error {
+func (u *User) SetToken() {
 	authBackend := utils.InitJWTAuthenticationBackend()
 	token, err := authBackend.GenerateToken(u.Id)
 	if err != nil {
 		panic(err)
 	}
 	u.Token = string(token)
-	return nil
 }
 
 // UserFromJson will decode the imput and return a user

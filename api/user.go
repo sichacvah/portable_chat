@@ -15,6 +15,10 @@ import (
 func InitUser(r *mux.Router) {
 	l4g.Debug("Initializing user api routes")
 	sr := r.PathPrefix("/users").Subrouter()
+	sr.Handle("/login", negroni.New(
+		negroni.HandlerFunc(RequireContext),
+		negroni.HandlerFunc(login),
+	)).Methods("POST")
 	sr.Handle("/create", negroni.New(
 		negroni.HandlerFunc(RequireContext),
 		negroni.HandlerFunc(createUser),
@@ -34,7 +38,27 @@ func InitUser(r *mux.Router) {
 	sr.Handle("/{uuid}", negroni.New(
 		negroni.HandlerFunc(RequireAuthAndUser),
 		negroni.HandlerFunc(updateUser),
-	))
+	)).Methods("POST")
+}
+
+func login(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	sessionContext := context.Get(r, "context").(Context)
+	props := model.MapFromJson(r.Body)
+	result := <-Srv.Store.User().GetByLogin(props["login"])
+	if result.Err != nil {
+		sessionContext.SetInvalidParam("get User by Login", "Login = "+props["login"])
+		w.WriteHeader(sessionContext.Err.StatusCode)
+		return
+	}
+	user := result.Data.(*model.User)
+	if user.ComparePassword(props["password"]) {
+		w.WriteHeader(http.StatusOK)
+		user.SetToken()
+		w.Write([]byte(user.ToJson()))
+	} else {
+		w.WriteHeader(http.StatusUnauthorized)
+	}
+
 }
 
 func deleteUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
