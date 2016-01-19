@@ -25,6 +25,62 @@ func NewBoltDbChannelStore(boltStore *BoltDBStore) ChannelStore {
 	return cs
 }
 
+func (cs BoltChannelStore) GetCount() StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		var result StoreResult
+		items, err := cs.channelsBucket.Items()
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.GetCount", "Error while get items", "")
+		} else {
+			result.Data = len(items)
+		}
+		storeChannel <- result
+		close(storeChannel)
+		return
+	}()
+
+	return storeChannel
+}
+
+func (cs BoltChannelStore) SaveDirectChannel(channel *model.Channel, mb1 *model.ChannelMember, mb2 *model.ChannelMember) StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		var result StoreResult
+
+		err := cs.channelsBucket.Put([]byte(channel.Id), []byte(channel.ToJson()))
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.SaveDirectChannel", "Error while save channel", "")
+		} else {
+
+			items, err := cs.channelMembersBucket.Items()
+			if err != nil {
+				result.Err = model.NewAppError("BoltChannelStore.SaveDirectChannel", "Error while save channel", "")
+			}
+
+			count := len(items)
+			err = cs.channelMembersBucket.Put([]byte(strconv.Itoa(count+1)), []byte(mb1.ToJson()))
+			if err != nil {
+				result.Err = model.NewAppError("BoltChannelStore.SaveDirectChannel", "Error while save channel member", "")
+			}
+			err = cs.channelMembersBucket.Put([]byte(strconv.Itoa(count+2)), []byte(mb2.ToJson()))
+			if err != nil {
+				result.Err = model.NewAppError("BoltChannelStore.SaveDirectChannel", "Error while save channel member", "")
+			}
+		}
+
+		result.Data = channel
+
+		storeChannel <- result
+		close(storeChannel)
+		return
+	}()
+
+	return storeChannel
+}
+
 func (cs BoltChannelStore) SaveMember(member *model.ChannelMember) StoreChannel {
 	storeChannel := make(StoreChannel)
 	go func() {
@@ -37,9 +93,49 @@ func (cs BoltChannelStore) SaveMember(member *model.ChannelMember) StoreChannel 
 			err := cs.channelMembersBucket.Put([]byte(strconv.Itoa(id)), []byte(member.ToJson()))
 			if err != nil {
 				result.Err = model.NewAppError("BoltChannelStore.SaveMember", "Error while save members", "")
+			} else {
+				result.Data = member
 			}
 		}
+
+		storeChannel <- result
+		close(storeChannel)
+		return
 	}()
+	return storeChannel
+}
+
+func (cs BoltChannelStore) GetMember(channelId string, userId string) StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		var result StoreResult
+		var member *model.ChannelMember
+		var itemString string
+		notFound := true
+
+		items, err := cs.channelMembersBucket.Items()
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.GetMember", "Error while get members", "")
+		} else {
+			for _, item := range items {
+				itemString = string(item.Value)
+				member = model.ChannelMemberFromJson(strings.NewReader(itemString))
+				if member.ChannelId == channelId && member.UserId == userId {
+					result.Data = member
+					notFound = false
+				}
+			}
+			if notFound {
+				result.Err = model.NewAppError("BoltChannelStore.GetMember", "Not found", "")
+			}
+		}
+
+		storeChannel <- result
+		close(storeChannel)
+		return
+	}()
+
 	return storeChannel
 }
 
@@ -182,6 +278,61 @@ func (cs BoltChannelStore) Get(channelId string) StoreChannel {
 		storeChannel <- result
 		close(storeChannel)
 		return
+	}()
+
+	return storeChannel
+}
+
+func (cs BoltChannelStore) GetChannelMembers(channelId string) StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		var result StoreResult
+		var channelMember *model.ChannelMember
+		items, err := cs.channelsBucket.Items()
+
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.GetChannelMembers", "Error while get members", "")
+		} else {
+			data := make(map[*model.ChannelMember]bool)
+			for _, item := range items {
+				itemString := string(item.Value)
+				channelMember = model.ChannelMemberFromJson(strings.NewReader(itemString))
+				if channelMember != nil && channelId == channelMember.ChannelId {
+					data[channelMember] = true
+				}
+			}
+			result.Data = data
+		}
+		storeChannel <- result
+		close(storeChannel)
+		return
+	}()
+
+	return storeChannel
+}
+
+func (cs BoltChannelStore) GetChannels(userId string) StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		var result StoreResult
+		var channel *model.Channel
+
+		items, err := cs.channelsBucket.Items()
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.GetChannels", "Error while get items", "")
+		} else {
+			data := make(map[*model.Channel]bool)
+
+			for _, item := range items {
+				channel = model.ChannelFromJson(strings.NewReader(string(item.Value)))
+				if channel != nil {
+					data[channel] = true
+				}
+			}
+		}
+
 	}()
 
 	return storeChannel

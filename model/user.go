@@ -10,21 +10,23 @@ import (
 )
 
 const (
-	ROLE_ADMIN   = "admin"
-	USER_ONLINE  = "online"
-	USER_OFFLINE = "offline"
+	USER_ROLE_ADMIN = "admin"
+	USER_ROLE_USER  = "user"
+	USER_ONLINE     = "online"
+	USER_OFFLINE    = "offline"
 )
 
 type User struct {
 	Id                   string `json:"id"`
-	Password             string `json:password,omitempty`
-	PasswordConfirmation string `json:password_confirmation,omitempty`
-	Token                string `json:token,omitempty`
+	Password             string `json:"password,omitempty"`
+	PasswordConfirmation string `json:"password_confirmation,omitempty"`
+	Token                string `json:"token"`
 	Login                string `json:"login"`
 	Name                 string `json:"name"`
 	Surname              string `json:"surname"`
 	Patronymic           string `json:"patronymic"`
 	PersonelNumber       string `json:"personel_number"`
+	Role                 string `json:"role"`
 }
 
 // ToJson convert a User to a json string
@@ -40,7 +42,6 @@ func (u *User) ToJson() string {
 func (u *User) Sanitize() {
 	u.Password = ""
 	u.PasswordConfirmation = ""
-	u.Token = ""
 }
 
 func (u *User) setHashedPassword() {
@@ -52,7 +53,7 @@ func (u *User) setHashedPassword() {
 }
 
 func (u *User) ComparePassword(password string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)) == nil
+	return (bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password)) == nil)
 }
 
 func (u *User) PreSave() {

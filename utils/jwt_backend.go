@@ -71,7 +71,7 @@ func getPrivateKey() *rsa.PrivateKey {
 	if err != nil {
 		panic(err)
 	}
-	privateKeyFile, err := os.Open(dir + "/settings/" + settings.PrivateKeyPath)
+	privateKeyFile, err := os.Open(dir + "/utils/" + settings.PrivateKeyPath)
 	if err != nil {
 		panic(err)
 	}
@@ -102,7 +102,7 @@ func getPublicKey() *rsa.PublicKey {
 		panic(err)
 	}
 
-	publicKeyFile, err := os.Open(dir + "/settings/" + settings.PublicKeyPath)
+	publicKeyFile, err := os.Open(dir + "/utils/" + settings.PublicKeyPath)
 	if err != nil {
 		panic(err)
 

@@ -19,22 +19,21 @@ type Context struct {
 
 func (c *Context) SetInvalidParam(where string, name string) {
 	c.Err = model.NewAppError(where, "Invalid "+name+" parameter", "")
+	fmt.Errorf(c.Err.Error())
 	c.Err.StatusCode = http.StatusBadRequest
 }
 
 func tokenAuthWithUser(uuid string, accessToken string) bool {
-	authBackend := utils.InitJWTAuthenticationBackend()
-	token, err := jwt.Parse(accessToken, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("Unexpected signign method: %v", token.Header["alg"])
-		} else {
-			return authBackend.PublicKey, nil
-		}
-	})
-	return err == nil && token.Valid && token.Claims["sub"] == uuid
+	token := getTokenFromJWTBackend(accessToken)
+	return token != nil && token.Valid && token.Claims["sub"] == uuid
 }
 
 func tokenAuth(accessToken string) bool {
+	token := getTokenFromJWTBackend(accessToken)
+	return token != nil && token.Valid
+}
+
+func getTokenFromJWTBackend(accessToken string) *jwt.Token {
 	authBackend := utils.InitJWTAuthenticationBackend()
 	token, err := jwt.Parse(accessToken, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
@@ -43,7 +42,22 @@ func tokenAuth(accessToken string) bool {
 			return authBackend.PublicKey, nil
 		}
 	})
-	return err == nil && token.Valid
+	if err != nil {
+		return nil
+	}
+	return token
+}
+
+func getUserFromJWT(accessToken string) *model.User {
+	token := getTokenFromJWTBackend(accessToken)
+	if token == nil {
+		return nil
+	}
+	result := <-Srv.Store.User().Get(token.Claims["sub"].(string))
+	if result.Err != nil {
+		return nil
+	}
+	return result.Data.(*model.User)
 }
 
 func RequireContext(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
@@ -56,12 +70,19 @@ func RequireAuth(rw http.ResponseWriter, req *http.Request, next http.HandlerFun
 	queryParams, err := url.ParseQuery(req.URL.RawQuery)
 	token := queryParams["token"][0]
 	sessionContext := Context{}
-	if err != nil || token == "" {
+	if err != nil || token == "" || !tokenAuth(token) {
 		sessionContext.Err = model.NewAppError("ServeHttp", "Invalid auth data", "")
 		rw.WriteHeader(http.StatusUnauthorized)
 	} else {
-		context.Set(req, "context", sessionContext)
-		next(rw, req)
+		user := getUserFromJWT(token)
+		if user != nil {
+			sessionContext.User = (*user)
+			context.Set(req, "context", sessionContext)
+			next(rw, req)
+		} else {
+			rw.WriteHeader(http.StatusBadRequest)
+		}
+
 	}
 }
 
@@ -80,7 +101,7 @@ func RequireAuthAndUser(rw http.ResponseWriter, req *http.Request, next http.Han
 			if result.Err != nil {
 				rw.WriteHeader(http.StatusUnauthorized)
 			} else {
-				sessionContext.User = result.Data.(model.User)
+				sessionContext.User = (*result.Data.(*model.User))
 				context.Set(req, "context", sessionContext)
 				next(rw, req)
 			}

@@ -31,6 +31,13 @@ func (c *WebConn) readPump() {
 	}()
 	c.WebSocket.SetReadLimit(MAX_SIZE)
 	c.WebSocket.SetReadDeadline(time.Now().Add(PONG_WAIT))
+
+	c.WebSocket.SetPongHandler(func(string) error {
+		c.WebSocket.SetReadDeadline(time.Now().Add(PONG_WAIT))
+
+		return nil
+	})
+
 	for {
 		var msg model.Message
 		if err := c.WebSocket.ReadJSON(&msg); err != nil {

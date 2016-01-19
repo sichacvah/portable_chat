@@ -25,7 +25,7 @@ func NewBoltDbUserStore(boltStore *BoltDBStore) UserStore {
 	return us
 }
 
-func (us BoltUserStore) GetUsers() StoreChannel {
+func (us BoltUserStore) GetCount() StoreChannel {
 	storeChannel := make(StoreChannel)
 
 	go func() {
@@ -39,10 +39,37 @@ func (us BoltUserStore) GetUsers() StoreChannel {
 			close(storeChannel)
 		}
 
+		result.Data = len(items)
+		storeChannel <- result
+		close(storeChannel)
+	}()
+
+	return storeChannel
+}
+
+func (us BoltUserStore) GetUsers() StoreChannel {
+	storeChannel := make(StoreChannel)
+
+	go func() {
+		var userString string
+		var user *model.User
 		users := []string{}
 
+		result := StoreResult{}
+
+		items, err := us.usersBucket.Items()
+
+		if err != nil {
+			result.Err = model.NewAppError("BoltUserStore.GetUsers", err.Error(), "")
+			storeChannel <- result
+			close(storeChannel)
+		}
+
 		for _, item := range items {
-			users = append(users, string(item.Value))
+			userString = string(item.Value)
+			user = model.UserFromJson(strings.NewReader(userString))
+			user.Sanitize()
+			users = append(users, string(user.ToJson()))
 		}
 
 		result.Data = users
@@ -130,6 +157,13 @@ func (us BoltUserStore) Save(user *model.User) StoreChannel {
 
 		if us.isLoginTaken(user.Login) {
 			result.Err = model.NewAppError("BoltUserStore.Save", "User Login already taken", "user_login="+user.Login)
+			storeChannel <- result
+			close(storeChannel)
+			return
+		}
+
+		if user.Password != user.PasswordConfirmation {
+			result.Err = model.NewAppError("BoltUserStore.Save", "User Login already taken", "PasswordConformition="+user.PasswordConfirmation+" Password="+user.Password)
 			storeChannel <- result
 			close(storeChannel)
 			return

@@ -54,7 +54,14 @@ func login(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	if user.ComparePassword(props["password"]) {
 		w.WriteHeader(http.StatusOK)
 		user.SetToken()
+		user.Sanitize()
+		msg := &model.Message{}
+		msg.UserId = user.Id
+		msg.Action = model.ACTION_NEW_USER
+		msg.Props = make(map[string]string)
+		PublishAndForget(msg)
 		w.Write([]byte(user.ToJson()))
+
 	} else {
 		w.WriteHeader(http.StatusUnauthorized)
 	}
@@ -98,6 +105,7 @@ func updateUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	}
 
 	updatedUser := result.Data.(*model.User)
+	updatedUser.Sanitize()
 	w.Write([]byte(updatedUser.ToJson()))
 }
 
@@ -117,6 +125,7 @@ func getUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		return
 	}
 	user := result.Data.(*model.User)
+	user.Sanitize()
 	w.Write([]byte(user.ToJson()))
 }
 
@@ -143,6 +152,20 @@ func createUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		return
 	}
 
+	cr := <-Srv.Store.User().GetCount()
+	if cr.Err != nil {
+		sessionContext.SetInvalidParam("Create User", "user")
+		w.WriteHeader(sessionContext.Err.StatusCode)
+		return
+	}
+
+	usersCount := cr.Data.(int)
+	if usersCount <= 0 {
+		user.Role = model.USER_ROLE_ADMIN
+	} else {
+		user.Role = model.USER_ROLE_USER
+	}
+
 	result := <-Srv.Store.User().Save(user)
 	if result.Err != nil {
 		sessionContext.SetInvalidParam("Create User", "user")
@@ -150,5 +173,8 @@ func createUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(result.Data.(*model.User).ToJson()))
+	createdUser := result.Data.(*model.User)
+	createdUser.Sanitize()
+	createdUser.SetToken()
+	w.Write([]byte(createdUser.ToJson()))
 }

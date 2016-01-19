@@ -30,6 +30,10 @@ func (c *Channel) ToJson() string {
 	}
 }
 
+func (c *Channel) IsValid() bool {
+	return len(c.Name) > 0 && len(c.Type) > 0
+}
+
 func (c *Channel) PreSave() {
 	c.Id = uuid.New()
 }
