@@ -158,12 +158,8 @@ func createPost(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		w.WriteHeader(sessionContext.Err.StatusCode)
 		return
 	}
-	message := &model.Message{}
-
-	message.UserId = rPost.UserId
-	message.ChannelId = rPost.ChannelId
-	message.Action = rPost.
-		PublishAndForget()
+	message := model.NewMessage(rPost.UserId, rPost.ChannelId, model.ACTION_POSTED)
+	PublishAndForget(message)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(rPost.ToJson()))
