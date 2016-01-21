@@ -10,4 +10,5 @@ func main() {
 	api.NewServer()
 	api.InitApi()
 	api.StartServer()
+	api.CreateDefaultChannel()
 }

@@ -15,25 +15,207 @@ func InitChannel(r *mux.Router) {
 	l4g.Debug("Initializing channel api routes")
 
 	sr := r.PathPrefix("/channels").Subrouter()
+
 	sr.Handle("/", negroni.New(
 		negroni.HandlerFunc(RequireAuth),
 		negroni.HandlerFunc(getChannels),
 	)).Methods("GET")
+
 	sr.Handle("/create", negroni.New(
 		negroni.HandlerFunc(RequireAuth),
 		negroni.HandlerFunc(createChannel),
 	)).Methods("POST")
+
 	sr.Handle("/update", negroni.New(
 		negroni.HandlerFunc(RequireAuthAndUser),
 		negroni.HandlerFunc(updateChannel),
 	)).Methods("POST")
+
 	sr.Handle("/{id:[A-Za-z0-9]+}/add", negroni.New(
 		negroni.HandlerFunc(RequireAuthAndUser),
-		negroni.HandlerFunc(addUser),
+		negroni.HandlerFunc(addMember),
 	)).Methods("POST")
+
+	sr.Handle("/{id:[A-Za-z0-9]+}/delete", negroni.New(
+		negroni.HandlerFunc(RequireAuthAndUser),
+		negroni.HandlerFunc(deleteMember),
+	)).Methods("POST")
+
+	sr.Handle("/{id:[A-Za-z0-9]+}/join", negroni.New(
+		negroni.HandlerFunc(RequireAuthAndUser),
+		negroni.HandlerFunc(join),
+	)).Methods("POST")
+
+	sr.Handle("/{id:[A-Za-z0-9]+}/leave", negroni.New(
+		negroni.HandlerFunc(RequireAuthAndUser),
+		negroni.HandlerFunc(leave),
+	)).Methods("POST")
+
+	sr.Handle("/create_direct", negroni.New(
+		negroni.HandlerFunc(RequireAuthAndUser),
+		negroni.HandlerFunc(createDirectChannel),
+	)).Methods("POST")
+
 }
 
-func addUser(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+func SetNewChannelAdmin(channelId string, userId string, oldAdminId string) error {
+	if len(userId) <= 0 || userId == oldAdminId {
+		return model.NewAppError("api.SetNewChannelAdmin", "Wrong User id", "")
+	}
+
+	om := <-Srv.Store.Channel().GetMember(channelId, oldAdminId)
+	if om.Err != nil {
+		return om.Err
+	}
+	oldAdmin := om.Data.(*model.ChannelMember)
+	oldAdmin.Role = model.CHANNEL_ROLE_USER
+
+	nm := <-Srv.Store.Channel().GetMember(channelId, userId)
+	if nm.Err != nil {
+		return nm.Err
+	}
+
+	newAdmin := nm.Data.(*model.ChannelMember)
+	newAdmin.Role = model.CHANNEL_ROLE_ADMIN
+
+	result1 := <-Srv.Store.Channel().SaveMember(oldAdmin)
+	if result1.Err != nil {
+		return result1.Err
+	}
+
+	result2 := <-Srv.Store.Channel().SaveMember(newAdmin)
+	if result2.Err != nil {
+		return result2.Err
+	}
+
+	return nil
+}
+
+func leave(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	sessionContext := context.Get(r, "context").(Context)
+	vars := mux.Vars(r)
+
+	props := model.MapFromJson(r.Body)
+
+	channelId := string(vars["id"])
+	cr := <-Srv.Store.Channel().Get(channelId)
+	if cr.Err != nil {
+		sessionContext.SetInvalidParam("leave User from Channel", "Channel ID = "+channelId)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	cm := <-Srv.Store.Channel().GetMember(channelId, sessionContext.User.Id)
+	if cm.Err != nil {
+		sessionContext.SetInvalidParam("leave User from Channel", "Channel ID = "+channelId)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	m := cm.Data.(*model.ChannelMember)
+	if m.Role == model.CHANNEL_ROLE_ADMIN {
+		err := SetNewChannelAdmin(channelId, string(props["user_id"]), sessionContext.User.Id)
+		if err != nil {
+			sessionContext.SetInvalidParam("leave User from Channel", "Channel ID = "+channelId)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+	}
+
+	result := <-Srv.Store.Channel().DeleteMember(m)
+	if result.Err != nil {
+		sessionContext.SetInvalidParam("leave User from Channel", "Channel ID = "+channelId)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func join(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	sessionContext := context.Get(r, "context").(Context)
+	vars := mux.Vars(r)
+	channelId := string(vars["id"])
+
+	cr := <-Srv.Store.Channel().Get(channelId)
+	if cr.Err != nil {
+		sessionContext.SetInvalidParam("join User to Channel", "Channel ID = "+channelId)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	channel := cr.Data.(model.Channel)
+	if channel.Type != model.CHANNEL_OPEN {
+		sessionContext.SetInvalidParam("join User to Channel", "Channel ID = "+channelId)
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	m := &model.ChannelMember{UserId: sessionContext.User.Id, ChannelId: channel.Id}
+
+	cm := <-Srv.Store.Channel().SaveMember(m)
+	if cm.Err != nil {
+		sessionContext.SetInvalidParam("join User to Channel", "Channel ID = "+channelId)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	savedMember := cm.Data.(*model.ChannelMember)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(savedMember.ToJson()))
+}
+
+func createDefaultChannel() {
+	result := <-Srv.Store.Channel().GetCount()
+	if result.Data.(int) <= 0 {
+		CreateDefaultChannel()
+	}
+}
+
+func CreateDefaultChannel() {
+	channel := model.Channel{Name: model.DEFAULT_CHANNEL, Type: model.CHANNEL_OPEN}
+	_ = <-Srv.Store.Channel().Save(&channel)
+}
+
+func deleteMember(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	sessionContext := context.Get(r, "context").(Context)
+	vars := mux.Vars(r)
+	channelId := string(vars["id"])
+	m := model.ChannelMemberFromJson(r.Body)
+
+	if m.UserId == sessionContext.User.Id {
+		sessionContext.SetInvalidParam("delete User from Channel", "cant delete themself")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+
+	}
+
+	cm := <-Srv.Store.Channel().GetMember(channelId, sessionContext.User.Id)
+	if cm.Err != nil {
+		sessionContext.SetInvalidParam("delete User from Channel", "")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	currenMember := cm.Data.(*model.ChannelMember)
+	if currenMember.Role != model.CHANNEL_ROLE_ADMIN {
+		sessionContext.SetInvalidParam("delete User from Channel", "")
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	result := <-Srv.Store.Channel().DeleteMember(m)
+	if result.Err != nil {
+		sessionContext.SetInvalidParam("delete User from Channel", "")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func addMember(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	sessionContext := context.Get(r, "context").(Context)
 	newMember := model.ChannelMemberFromJson(r.Body)
 	vars := mux.Vars(r)
@@ -134,6 +316,45 @@ func getChannels(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) 
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(model.ChannelMapToJson(visibleChannels)))
+}
+
+func createDirectChannel(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	sessionContext := context.Get(r, "context").(Context)
+	props := model.MapFromJson(r.Body)
+
+	otherUserId := string(props["user_id"])
+
+	uc := <-Srv.Store.User().Get(otherUserId)
+
+	if uc.Err != nil {
+		sessionContext.SetInvalidParam("create DM Channel", "Channel not valid")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	m1 := &model.ChannelMember{
+		UserId: sessionContext.User.Id,
+		Role:   model.CHANNEL_ROLE_ADMIN,
+	}
+
+	m2 := &model.ChannelMember{
+		UserId: otherUserId,
+		Role:   model.CHANNEL_ROLE_USER,
+	}
+
+	channel := new(model.Channel)
+	channel.Name = model.GetDMNameFromIds(m1.UserId, m2.UserId)
+
+	cc := <-Srv.Store.Channel().SaveDirectChannel(channel, m1, m2)
+	if cc.Err != nil {
+		sessionContext.SetInvalidParam("create DM Channel", "Channel not valid")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	createdChannel := cc.Data.(*model.Channel)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(createdChannel.ToJson()))
 }
 
 func createChannel(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {

@@ -3,7 +3,12 @@ package model
 import (
 	"encoding/json"
 	"io"
+	"time"
 )
+
+func GetMillis() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
+}
 
 type AppError struct {
 	Message       string `json:"message"`        // Message to be display to the end user without debugging information
@@ -67,6 +72,25 @@ func ArrayFromJson(data io.Reader) []string {
 		return make([]string, 0)
 	} else {
 		return objarr
+	}
+}
+
+func BoolMapFromJson(data io.Reader) map[string]bool {
+	decoder := json.NewDecoder(data)
+
+	var objmap map[string]bool
+	if err := decoder.Decode(&objmap); err != nil {
+		return make(map[string]bool)
+	} else {
+		return objmap
+	}
+}
+
+func BoolMapToJson(objmap map[string]bool) string {
+	if b, err := json.Marshal(objmap); err != nil {
+		return ""
+	} else {
+		return string(b)
 	}
 }
 

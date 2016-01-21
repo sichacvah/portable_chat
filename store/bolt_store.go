@@ -10,6 +10,7 @@ type BoltDBStore struct {
 	db      *buckets.DB
 	user    UserStore
 	channel ChannelStore
+	post    PostStore
 }
 
 func NewBoltDBStore() *BoltDBStore {
@@ -31,6 +32,10 @@ func (bs BoltDBStore) Channel() ChannelStore {
 
 func (bs BoltDBStore) User() UserStore {
 	return bs.user
+}
+
+func (bs BoltDBStore) Post() PostStore {
+	return bs.post
 }
 
 func (bs BoltDBStore) Close() {

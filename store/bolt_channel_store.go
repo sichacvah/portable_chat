@@ -49,7 +49,9 @@ func (cs BoltChannelStore) SaveDirectChannel(channel *model.Channel, mb1 *model.
 
 	go func() {
 		var result StoreResult
-
+		channel.PreSave()
+		mb1.ChannelId = channel.Id
+		mb2.ChannelId = channel.Id
 		err := cs.channelsBucket.Put([]byte(channel.Id), []byte(channel.ToJson()))
 		if err != nil {
 			result.Err = model.NewAppError("BoltChannelStore.SaveDirectChannel", "Error while save channel", "")
@@ -81,6 +83,42 @@ func (cs BoltChannelStore) SaveDirectChannel(channel *model.Channel, mb1 *model.
 	return storeChannel
 }
 
+func (cs BoltChannelStore) DeleteMember(member *model.ChannelMember) StoreChannel {
+	storeChannel := make(StoreChannel)
+	go func() {
+		var result StoreResult
+		var key string
+		var memberJson string
+		var m *model.ChannelMember
+		items, err := cs.channelMembersBucket.Items()
+		if err != nil {
+			result.Err = model.NewAppError("BoltChannelStore.SaveMember", "Error while save members", "")
+		} else {
+			for _, item := range items {
+				memberJson = string(item.Value)
+				m = model.ChannelMemberFromJson(strings.NewReader(memberJson))
+				if member.UserId == m.UserId && member.ChannelId == m.ChannelId {
+					key = string(item.Key)
+					break
+				}
+				err := cs.channelMembersBucket.Delete([]byte(key))
+				if err != nil {
+					result.Err = model.NewAppError("BoltChannelStore.SaveMember", "Error while save members", "")
+				} else {
+					result.Data = "ok"
+				}
+
+			}
+
+		}
+
+		storeChannel <- result
+		close(storeChannel)
+		return
+	}()
+	return storeChannel
+}
+
 func (cs BoltChannelStore) SaveMember(member *model.ChannelMember) StoreChannel {
 	storeChannel := make(StoreChannel)
 	go func() {
@@ -90,6 +128,9 @@ func (cs BoltChannelStore) SaveMember(member *model.ChannelMember) StoreChannel 
 			result.Err = model.NewAppError("BoltChannelStore.SaveMember", "Error while save members", "")
 		} else {
 			id := len(items) + 1
+			if len(items) <= 0 {
+				member.Role = model.CHANNEL_ROLE_ADMIN
+			}
 			err := cs.channelMembersBucket.Put([]byte(strconv.Itoa(id)), []byte(member.ToJson()))
 			if err != nil {
 				result.Err = model.NewAppError("BoltChannelStore.SaveMember", "Error while save members", "")

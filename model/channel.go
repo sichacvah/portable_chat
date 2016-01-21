@@ -70,3 +70,11 @@ func ChannelMapFromJson(data io.Reader) map[string]*Channel {
 		return nil
 	}
 }
+
+func GetDMNameFromIds(userId1, userId2 string) string {
+	if userId1 > userId2 {
+		return userId2 + "__" + userId1
+	} else {
+		return userId1 + "__" + userId2
+	}
+}

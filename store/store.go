@@ -12,6 +12,7 @@ type StoreChannel chan StoreResult
 type Store interface {
 	User() UserStore
 	Channel() ChannelStore
+	Post() PostStore
 	Close()
 }
 
@@ -27,6 +28,14 @@ type ChannelStore interface {
 	GetMember(channelId string, userId string) StoreChannel
 	SaveDirectChannel(channel *model.Channel, mb1 *model.ChannelMember, mb2 *model.ChannelMember) StoreChannel
 	GetCount() StoreChannel
+	DeleteMember(member *model.ChannelMember) StoreChannel
+}
+
+type PostStore interface {
+	Save(post *model.Post) StoreChannel
+	Update(post *model.Post) StoreChannel
+	GetPosts(channelId string) StoreChannel
+	Get(postId string) StoreChannel
 }
 
 type UserStore interface {
