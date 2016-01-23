@@ -222,6 +222,8 @@ func (cs BoltChannelStore) Save(channel *model.Channel) StoreChannel {
 			err := cs.channelsBucket.Put([]byte(channel.Id), []byte(channel.ToJson()))
 			if err != nil {
 				result.Err = model.NewAppError("BoltChannelStore.Save", "Error while save", "")
+			} else {
+				result.Data = channel
 			}
 		}
 
@@ -361,7 +363,7 @@ func (cs BoltChannelStore) GetChannels(userId string) StoreChannel {
 		var channel *model.Channel
 
 		items, err := cs.channelsBucket.Items()
-		if err != nil {
+		if err != nil || len(userId) <= 0 {
 			result.Err = model.NewAppError("BoltChannelStore.GetChannels", "Error while get items", "")
 		} else {
 			data := make(map[*model.Channel]bool)
@@ -372,8 +374,12 @@ func (cs BoltChannelStore) GetChannels(userId string) StoreChannel {
 					data[channel] = true
 				}
 			}
+			result.Data = data
 		}
 
+		storeChannel <- result
+		close(storeChannel)
+		return
 	}()
 
 	return storeChannel

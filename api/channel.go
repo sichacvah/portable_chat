@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -166,16 +167,21 @@ func join(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	w.Write([]byte(savedMember.ToJson()))
 }
 
-func createDefaultChannel() {
+func CreateDefaultChannel() {
 	result := <-Srv.Store.Channel().GetCount()
 	if result.Data.(int) <= 0 {
-		CreateDefaultChannel()
+		createDefaultChannel()
 	}
 }
 
-func CreateDefaultChannel() {
+func createDefaultChannel() {
 	channel := model.Channel{Name: model.DEFAULT_CHANNEL, Type: model.CHANNEL_OPEN}
-	_ = <-Srv.Store.Channel().Save(&channel)
+	result := <-Srv.Store.Channel().Save(&channel)
+	if result.Err != nil {
+		panic(result.Err)
+	} else {
+		fmt.Println(result.Data)
+	}
 }
 
 func deleteMember(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
@@ -288,6 +294,7 @@ func getChannels(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) 
 	sessionContext := context.Get(r, "context").(Context)
 
 	result := <-Srv.Store.Channel().GetChannels(sessionContext.User.Id)
+
 	if result.Err != nil {
 		sessionContext.SetInvalidParam("get Channels", "")
 		w.WriteHeader(http.StatusBadRequest)
@@ -300,7 +307,7 @@ func getChannels(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) 
 	channels := result.Data.(map[*model.Channel]bool)
 	for channel, ok := range channels {
 		if ok {
-			if channel.Type != model.CHANNEL_OPEN {
+			if channel.Type == model.CHANNEL_OPEN {
 				visibleChannels[channel.Id] = channel
 			} else {
 				mr := <-Srv.Store.Channel().GetMembers(channel)

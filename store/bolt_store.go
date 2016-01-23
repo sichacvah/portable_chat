@@ -22,6 +22,8 @@ func NewBoltDBStore() *BoltDBStore {
 	} else {
 		boltDbStore.db = db
 		boltDbStore.user = NewBoltDbUserStore(&boltDbStore)
+		boltDbStore.channel = NewBoltDbChannelStore(&boltDbStore)
+		boltDbStore.post = NewBoltDbPostStore(&boltDbStore)
 	}
 	return &boltDbStore
 }

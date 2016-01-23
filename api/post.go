@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 
 	l4g "code.google.com/p/log4go"
@@ -18,7 +19,7 @@ func InitPost(r *mux.Router) {
 		negroni.HandlerFunc(getPost),
 	)).Methods("GET")
 
-	sr := r.PathPrefix("/channels/{id:[A-Za-z0-9]+}").Subrouter()
+	sr := r.PathPrefix("/channels/{id}").Subrouter()
 
 	sr.Handle("/create", negroni.New(
 		negroni.HandlerFunc(RequireAuth),
@@ -30,10 +31,11 @@ func InitPost(r *mux.Router) {
 		negroni.HandlerFunc(updatePost),
 	)).Methods("POST")
 
-	sr.Handle("/posts/{offset:[0-9]+}/{limit:[0-9]+}", negroni.New(
+	// {offset:[0-9]+}/{limit:[0-9]+}
+	sr.Handle("/posts/", negroni.New(
 		negroni.HandlerFunc(RequireAuth),
 		negroni.HandlerFunc(getPosts),
-	)).Methods("POST")
+	)).Methods("GET")
 }
 
 func GetPosts(channelId string) (map[string]*model.Post, *model.AppError) {
@@ -43,10 +45,6 @@ func GetPosts(channelId string) (map[string]*model.Post, *model.AppError) {
 	}
 
 	posts := result.Data.(map[string]*model.Post)
-	if posts == nil {
-		return nil, model.NewAppError("Get Posts", "Posts not found", "")
-	}
-
 	return posts, nil
 }
 
@@ -58,6 +56,7 @@ func getPosts(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 
 	posts, err := GetPosts(channelId)
 	if err != nil {
+		fmt.Println(err)
 		sessionContext.SetInvalidParam("Error while get posts", "")
 		w.WriteHeader(sessionContext.Err.StatusCode)
 		return

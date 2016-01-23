@@ -30,7 +30,7 @@ func (ps BoltPostStore) GetPosts(channelID string) StoreChannel {
 
 	go func() {
 		var result StoreResult
-		var posts map[string]*model.Post
+		posts := make(map[string]*model.Post)
 		channelPostsJson, err := ps.postsByChannel.Get([]byte(channelID))
 		if err != nil {
 			result.Err = model.NewAppError("BoltPostStore.", "Post is not valid", "")
